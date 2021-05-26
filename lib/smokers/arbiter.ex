@@ -4,8 +4,11 @@ use GenServer
 require Logger
 require Record
 
-Record.defrecord(:state, smokers: nil)
-Record.defrecord(:smoker_state, smoker_pid: nil, amount: 0)
+
+Record.defrecordp(:rec_state, smokers: nil)
+Record.defrecordp(:rec_smoker_state, smoker_pid: nil, amount: 0)
+
+### API
 
 def start_link(types) do
     GenServer.start_link(__MODULE__, types, [name: __MODULE__])
@@ -17,6 +20,8 @@ def register_smoker(arbiter_pid, type, smoker_pid) do
 end
 
 
+### Callbacks
+
 @impl true
 def init(types) do
     state = new_state(types)
@@ -27,13 +32,13 @@ end
 
 @impl true
 def handle_cast({:register_smoker, type, smoker_pid}, state) do
-    smoker_state = state(state, :smokers)[type]
+    smoker_state = rec_state(state, :smokers)[type]
     new_smokers = Map.put(
-        state(state, :smokers),
+        rec_state(state, :smokers),
         type,
-        smoker_state(smoker_state, smoker_pid: smoker_pid)
+        rec_smoker_state(smoker_state, smoker_pid: smoker_pid)
     )
-    new_state = state(state, smokers: new_smokers)
+    new_state = rec_state(state, smokers: new_smokers)
     Logger.info("Arbiter - registering smoker: old_state=#{inspect(state)} new_state=#{inspect(new_state)}")
     Smokers.Smoker.registered(smoker_pid)
     Logger.info("Arbiter: all? #{inspect(all_smokers_registered(new_state))}")
@@ -41,21 +46,21 @@ def handle_cast({:register_smoker, type, smoker_pid}, state) do
 end
 
 
+### Implementation
+
 defp new_state(types) do
-    smokers = for t <- types, into: %{}, do: {t, smoker_state()}
-    state(smokers: smokers)
+    smokers = for t <- types, into: %{}, do: {t, rec_smoker_state()}
+    rec_state(smokers: smokers)
 end
 
 
 defp all_smokers_registered(state) do
-    # FIXME fn
-    state(state, :smokers) |> Enum.all?(fn {_,smoker_state} -> smoker_registered(smoker_state) end)
+    rec_state(state, :smokers) |> Enum.all?(fn {_,smoker_state} -> smoker_registered(smoker_state) end)
 end
 
 
-defp smoker_registered(smoker_state) do
-    smoker_state(smoker_state, :smoker_pid) != nil
-end
+defp smoker_registered(rec_smoker_state(smoker_pid: pid)) when is_pid(pid), do: true
+defp smoker_registered(rec_smoker_state(smoker_pid: nil)), do: false
 
 
 end
