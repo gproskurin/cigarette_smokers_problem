@@ -9,8 +9,13 @@ require Logger
 require Record
 
 
-Record.defrecordp(:rec_state, smokers: nil)
-Record.defrecordp(:rec_smoker_state, smoker_pid: nil, amount: 0)
+defmodule State do
+    defstruct [smokers: nil]
+end
+
+defmodule SmokerState do
+    defstruct [smoker_pid: nil, amount: 0]
+end
 
 
 ### API
@@ -52,9 +57,7 @@ end
 @impl true
 def handle_info(:put, state) do
     Logger.info("Arbiter: PUT_SMOKE: state=#{inspect state}")
-    smokers = rec_state(state, :smokers)
-    smokers = rand_gen_type_and_bump_other_amounts(smokers)
-    state = rec_state(state, smokers: smokers)
+    state = %State{state | smokers: rand_gen_type_and_bump_other_amounts(state.smokers)}
     Logger.info("Arbiter: PUT_SMOKE: new_state=#{inspect state}")
     schedule_smoke()
     {:noreply, state}
@@ -64,26 +67,26 @@ end
 ### Implementation
 
 defp new_state(types) do
-    smokers = for t <- types, into: %{}, do: {t, rec_smoker_state()}
-    rec_state(smokers: smokers)
+    smokers = for t <- types, into: %{}, do: {t, %SmokerState{}}
+    %State{smokers: smokers}
 end
 
 
 defp smokers_register(state, type, pid) do
-    smokers = rec_state(state, :smokers)
+    smokers = state.smokers
     smoker_state = smokers[type]
-    smokers = %{smokers | type => rec_smoker_state(smoker_state, smoker_pid: pid)}
-    rec_state(state, smokers: smokers)
+    smokers = %{smokers | type => %SmokerState{smoker_state | smoker_pid: pid}}
+    %State{state | smokers: smokers}
 end
 
 
 defp all_smokers_registered(state) do
-    rec_state(state, :smokers) |> Enum.all?(fn {_,smoker_state} -> smoker_registered(smoker_state) end)
+    state.smokers |> Enum.all?(fn {_,smoker_state} -> smoker_registered(smoker_state) end)
 end
 
 
-defp smoker_registered(rec_smoker_state(smoker_pid: pid)) when is_pid(pid), do: true
-defp smoker_registered(rec_smoker_state(smoker_pid: nil)), do: false
+defp smoker_registered(%SmokerState{smoker_pid: pid}) when is_pid(pid), do: true
+defp smoker_registered(%SmokerState{smoker_pid: nil}), do: false
 
 
 defp schedule_smoke() do
@@ -108,8 +111,8 @@ defp bump_other_amounts(smokers, type) do
     Logger.info("Arbiter: bumping amounts: type=#{type}")
     bump_amount = fn
         ({^type,_}, acc) -> acc # remain unchanged
-        ({t, rec_smoker_state(amount: a) = sr}, acc) ->
-            %{acc | t => rec_smoker_state(sr, amount: a+1)}
+        ({t, %SmokerState{amount: a} = sr}, acc) ->
+            %{acc | t => %SmokerState{sr | amount: a+1}}
     end
     new_smokers = Enum.reduce(smokers, smokers, bump_amount)
     Logger.info("Arbiter: bumping amounts: new=#{inspect new_smokers}")
