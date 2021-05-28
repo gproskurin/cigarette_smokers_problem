@@ -16,6 +16,11 @@ def registered(smoker_pid) do
 end
 
 
+def check(smoker_pid) do
+    GenServer.cast(smoker_pid, :check)
+end
+
+
 @impl true
 def init({type, arbiter_pid}) do
     state = %{
@@ -42,7 +47,11 @@ def handle_cast(:registered, state) do
     Logger.info("Smoker: registered, state=#{inspect(state)}")
     {:noreply, state}
 end
+def handle_cast(:check, state) do
+end
 
+
+#defp get_arbiter_pid(), do
 
 defp smoke() do
     :timer.sleep(@sleep_time)

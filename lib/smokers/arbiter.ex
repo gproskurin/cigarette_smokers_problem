@@ -30,6 +30,11 @@ def register_smoker(arbiter_pid, type, smoker_pid) do
 end
 
 
+def claim(arbiter_pid, type, smoker_pid) do
+    GenServer.cast(arbiter_pid, {:claim, type})
+end
+
+
 ### Callbacks
 
 @impl true
@@ -37,6 +42,17 @@ def init(types) do
     state = new_state(types)
     Logger.info("Starting arbiter: state=#{inspect(state)} self=#{inspect(self())}")
     {:ok, state}
+end
+
+
+@impl true
+def handle_call({:claim, type}, _from, state) do
+    case try_claim(state.smokers, type) do
+        {true, new_smokers} ->
+            {:reply, :claim_ok, %State{smokers: new_smokers}}
+        false ->
+            {:reply, :claim_fail, state}
+    end
 end
 
 
@@ -117,6 +133,22 @@ defp bump_other_amounts(smokers, type) do
     new_smokers = Enum.reduce(smokers, smokers, bump_amount)
     Logger.info("Arbiter: bumping amounts: new=#{inspect new_smokers}")
     new_smokers
+end
+
+
+defp try_claim(%{} = smokers, type) do
+    dec_amount = fn
+        (_, false) ->
+            false # had failure earlier
+        ({^type,_}, a) ->
+            a # not changing for this type
+        ({t, %SmokerState{amount: amount} = sr}, {true,acc}) when amount > 0 ->
+            acc = %{acc | t => %SmokerState{sr | amount: amount-1}}
+            {true, acc}
+        ({_, %SmokerState{amount: amount}}, {true,_}) when amount <= 0 ->
+            false
+    end
+    Enum.reduce(smokers, {true,smokers}, dec_amount)
 end
 
 
