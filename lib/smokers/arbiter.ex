@@ -18,6 +18,8 @@ defmodule SmokerState do
 end
 
 
+@time_put 3000
+
 ### API
 
 def start_link(types) do
@@ -117,7 +119,7 @@ defp schedule_put() do
     #ms = :rand.uniform(20000)
     #:timer.send_after(ms, :put)
     #send(self(), :put)
-    :timer.send_after(9000, :put)
+    :timer.send_after(@time_put, :put)
 end
 
 

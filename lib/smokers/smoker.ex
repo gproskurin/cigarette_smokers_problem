@@ -10,6 +10,7 @@ defmodule Data do
     defstruct [type: nil, arbiter_pid: nil]
 end
 
+@time_smoke 10000
 
 ### API
 
@@ -59,7 +60,7 @@ def handle_event(:cast, :ev_check, :st_wait, data) do
     case Arbiter.claim(data.arbiter_pid, data.type) do
         :claim_ok ->
             Logger.info("CLAIM_OK: data=#{inspect data}")
-            {:next_state, :st_smoking, data, [{:state_timeout, 10000, :ev_smoke_timeout}]}
+            {:next_state, :st_smoking, data, [{:state_timeout, @time_smoke, :ev_smoke_timeout}]}
         :claim_fail ->
             Logger.info("CLAIM_FAIL: data=#{inspect data}")
             :keep_state_and_data
