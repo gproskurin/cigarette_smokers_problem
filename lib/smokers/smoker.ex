@@ -1,61 +1,80 @@
 defmodule Smokers.Smoker do
 
-use GenServer
+alias Smokers.Arbiter, as: Arbiter
+
+use GenStateMachine, callback_mode: :handle_event_function
 require Logger
 
-@sleep_time 1000
 
-
-def start_link(type, arbiter_pid) do
-    GenServer.start_link(__MODULE__, {type, arbiter_pid})
+defmodule Data do
+    defstruct [type: nil, arbiter_pid: nil]
 end
 
 
-def registered(smoker_pid) do
-    GenServer.cast(smoker_pid, :registered)
+### API
+
+def start_link(type) do
+    GenStateMachine.start_link(__MODULE__, type)
 end
 
 
 def check(smoker_pid) do
-    GenServer.cast(smoker_pid, :check)
+    GenStateMachine.cast(smoker_pid, :ev_check)
 end
 
 
+def registered(smoker_pid) do
+    GenStateMachine.cast(smoker_pid, :ev_registered)
+end
+
+
+### Callbacks
+
 @impl true
-def init({type, arbiter_pid}) do
-    state = %{
+def init(type) do
+    arbiter_pid = Arbiter.get_pid()
+    data = %Data{
         type: type,
         arbiter_pid: arbiter_pid
     }
-    {:ok, state, {:continue, :register_smoker}}
+    Logger.info("SMOKER init: data=#{inspect data}")
+    :ok = Arbiter.register_smoker(arbiter_pid, type, self())
+    {:ok, :st_wait_registration, data}
 end
 
 
 @impl true
-def handle_continue(:register_smoker, state) do
-    :ok = Smokers.Arbiter.register_smoker(
-        state.arbiter_pid,
-        state.type,
-        self()
-    )
-    {:noreply, state}
+def handle_event(:cast, :ev_registered, :st_wait_registration, data) do
+    Logger.info("SMOKER: ev_registered data=#{inspect data}")
+    {:next_state, :st_wait, data}
+end
+def handle_event(_, ev, :st_wait_registration, data) do
+    Logger.info("SMOKER: event while waiting: ev=#{inspect ev} data=#{inspect data}")
+    {:keep_state_and_data, [:postpone]}
+end
+
+def handle_event(:cast, :ev_check, :st_wait, data) do
+    Smokers.Metrics.smoker_notified(data.type)
+    Logger.info("EVENT: check data=#{inspect data}")
+    case Arbiter.claim(data.arbiter_pid, data.type) do
+        :claim_ok ->
+            Logger.info("CLAIM_OK: data=#{inspect data}")
+            {:next_state, :st_smoking, data, [{:state_timeout, 10000, :ev_smoke_timeout}]}
+        :claim_fail ->
+            Logger.info("CLAIM_FAIL: data=#{inspect data}")
+            :keep_state_and_data
+    end
+end
+
+def handle_event(:state_timeout, :ev_smoke_timeout, :st_smoking, data) do
+    Logger.info("TIMEOUT while smoking: data=#{inspect data}")
+    {:next_state, :st_wait, data}
+end
+def handle_event(ev_type, ev, :st_smoking, data) do
+    Logger.info("EVENT while smoking: ev_type=#{inspect ev_type} ev=#{inspect ev} data=#{inspect data}")
+    {:keep_state_and_data, [:postpone]}
 end
 
 
-@impl true
-def handle_cast(:registered, state) do
-    Logger.info("Smoker: registered, state=#{inspect(state)}")
-    {:noreply, state}
-end
-def handle_cast(:check, state) do
 end
 
-
-#defp get_arbiter_pid(), do
-
-defp smoke() do
-    :timer.sleep(@sleep_time)
-end
-
-
-end

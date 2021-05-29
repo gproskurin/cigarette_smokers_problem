@@ -21,7 +21,7 @@ end
 ### API
 
 def start_link(types) do
-    GenServer.start_link(__MODULE__, types, [name: __MODULE__])
+    GenServer.start_link(__MODULE__, types, [name: :smokers_arbiter])
 end
 
 
@@ -30,8 +30,15 @@ def register_smoker(arbiter_pid, type, smoker_pid) do
 end
 
 
-def claim(arbiter_pid, type, smoker_pid) do
-    GenServer.cast(arbiter_pid, {:claim, type})
+def claim(arbiter_pid, type) do
+    GenServer.call(arbiter_pid, {:claim, type})
+end
+
+
+def get_pid() do
+    pid = Process.whereis(:smokers_arbiter)
+    true = is_pid(pid)
+    pid
 end
 
 
@@ -40,7 +47,7 @@ end
 @impl true
 def init(types) do
     state = new_state(types)
-    Logger.info("Starting arbiter: state=#{inspect(state)} self=#{inspect(self())}")
+    Logger.info("Starting arbiter: state=#{inspect state}")
     {:ok, state}
 end
 
@@ -63,7 +70,7 @@ def handle_cast({:register_smoker, type, smoker_pid}, state) do
     Smokers.Smoker.registered(smoker_pid)
     Logger.info("Arbiter: all? #{inspect(all_smokers_registered(new_state))}")
     case all_smokers_registered(new_state) do
-        true -> schedule_smoke()
+        true -> schedule_put()
         _ -> :ok
     end
     {:noreply, new_state}
@@ -75,7 +82,8 @@ def handle_info(:put, state) do
     Logger.info("Arbiter: PUT_SMOKE: state=#{inspect state}")
     state = %State{state | smokers: rand_gen_type_and_bump_other_amounts(state.smokers)}
     Logger.info("Arbiter: PUT_SMOKE: new_state=#{inspect state}")
-    schedule_smoke()
+    notify_smokers(state.smokers)
+    schedule_put()
     {:noreply, state}
 end
 
@@ -105,9 +113,11 @@ defp smoker_registered(%SmokerState{smoker_pid: pid}) when is_pid(pid), do: true
 defp smoker_registered(%SmokerState{smoker_pid: nil}), do: false
 
 
-defp schedule_smoke() do
-    ms = :rand.uniform(5000)
-    :timer.send_after(ms, :put)
+defp schedule_put() do
+    #ms = :rand.uniform(20000)
+    #:timer.send_after(ms, :put)
+    #send(self(), :put)
+    :timer.send_after(9000, :put)
 end
 
 
@@ -149,6 +159,15 @@ defp try_claim(%{} = smokers, type) do
             false
     end
     Enum.reduce(smokers, {true,smokers}, dec_amount)
+end
+
+
+defp notify_smokers(smokers) do
+    notify = fn
+        ({_type, %SmokerState{smoker_pid: smoker_pid}}, _acc) when is_pid(smoker_pid) ->
+            Smokers.Smoker.check(smoker_pid)
+    end
+    Enum.reduce(smokers, nil, notify)
 end
 
 
